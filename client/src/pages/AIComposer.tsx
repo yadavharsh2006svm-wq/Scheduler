@@ -23,7 +23,33 @@ const AIComposer = () => {
    // Manual media upload state (photo/video)
    const [mediaFile, setMediaFile] = useState<File | null>(null);
    const [mediaPreview, setMediaPreview] = useState<string>("");
+   const [mediaRatioInvalid, setMediaRatioInvalid] = useState(false);
    const fileInputRef = useRef<HTMLInputElement>(null);
+
+   // Instagram feed posts only allow aspect ratios between 4:5 (0.8) and 1.91:1
+   const INSTAGRAM_MIN_RATIO = 0.8;
+   const INSTAGRAM_MAX_RATIO = 1.91;
+
+   const checkInstagramRatio = (file: File, previewUrl: string) => {
+    if (!file.type.startsWith("image/")) {
+      // Ratio check only applies to images; videos aren't validated here
+      setMediaRatioInvalid(false);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const ratio = img.width / img.height;
+      if (ratio < INSTAGRAM_MIN_RATIO || ratio > INSTAGRAM_MAX_RATIO) {
+        setMediaRatioInvalid(true);
+        toast.error(
+          `Image is ${img.width}×${img.height} (${ratio.toFixed(2)}:1). Instagram feed posts need a ratio between 4:5 (0.8:1) and 1.91:1 — this looks like a Story/Reel format. Please crop it before scheduling.`
+        );
+      } else {
+        setMediaRatioInvalid(false);
+      }
+    };
+    img.src = previewUrl;
+   }
 
    const fetchGenerations = async () => {
     try {
@@ -56,14 +82,18 @@ const AIComposer = () => {
     }
 
     if(mediaPreview) URL.revokeObjectURL(mediaPreview);
+    const newPreviewUrl = URL.createObjectURL(file);
     setMediaFile(file);
-    setMediaPreview(URL.createObjectURL(file));
+    setMediaPreview(newPreviewUrl);
+    setMediaRatioInvalid(false);
+    checkInstagramRatio(file, newPreviewUrl);
    }
 
    const removeMedia = () => {
     if(mediaPreview) URL.revokeObjectURL(mediaPreview);
     setMediaFile(null);
     setMediaPreview("");
+    setMediaRatioInvalid(false);
     if(fileInputRef.current) fileInputRef.current.value = "";
    }
 
@@ -113,6 +143,10 @@ const AIComposer = () => {
     }
     if(!scheduledDate || !scheduledTime){
       toast.error("Select date and time");
+      return;
+    }
+    if(selectedPlatforms.includes('instagram') && mediaFile && mediaRatioInvalid){
+      toast.error("This image's aspect ratio isn't supported by Instagram feed posts. Please upload a 4:5 to 1.91:1 image (or a square 1:1).");
       return;
     }
 
@@ -169,7 +203,7 @@ const AIComposer = () => {
           {/* Manual photo/video upload preview */}
           {mediaPreview && (
             <div className="px-6 pb-4">
-              <div className="relative w-28 h-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+              <div className={`relative w-28 h-28 rounded-xl overflow-hidden border bg-slate-50 ${mediaRatioInvalid ? "border-red-300" : "border-slate-200"}`}>
                 {mediaFile?.type.startsWith("video/") ? (
                   <video src={mediaPreview} className="w-full h-full object-cover"/>
                 ) : (
@@ -182,6 +216,11 @@ const AIComposer = () => {
                   <XIcon className="size-3.5"/>
                 </button>
               </div>
+              {mediaRatioInvalid && (
+                <p className="text-xs text-red-500 mt-2 max-w-xs">
+                  This looks like a Story/Reel (9:16) image. Instagram feed posts need a 4:5 to 1.91:1 ratio.
+                </p>
+              )}
             </div>
           )}
 
@@ -356,18 +395,25 @@ const AIComposer = () => {
                 </label>
 
                 {mediaPreview ? (
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                    {mediaFile?.type.startsWith("video/") ? (
-                      <video src={mediaPreview} controls className="w-full aspect-video object-cover"/>
-                    ) : (
-                      <img src={mediaPreview} alt="Upload preview" className="w-full aspect-video object-cover"/>
+                  <div>
+                    <div className={`relative rounded-xl overflow-hidden border bg-slate-50 ${mediaRatioInvalid ? "border-red-300" : "border-slate-200"}`}>
+                      {mediaFile?.type.startsWith("video/") ? (
+                        <video src={mediaPreview} controls className="w-full aspect-video object-cover"/>
+                      ) : (
+                        <img src={mediaPreview} alt="Upload preview" className="w-full aspect-video object-cover"/>
+                      )}
+                      <button
+                        onClick={removeMedia}
+                        className="absolute top-2 right-2 p-2 rounded-full bg-slate-900/70 hover:bg-red-500 text-white transition-colors"
+                      >
+                        <Trash2Icon className="size-4"/>
+                      </button>
+                    </div>
+                    {mediaRatioInvalid && (
+                      <p className="text-xs text-red-500 mt-2">
+                        This looks like a Story/Reel (9:16) image. Instagram feed posts need a 4:5 to 1.91:1 ratio — crop it and re-upload.
+                      </p>
                     )}
-                    <button
-                      onClick={removeMedia}
-                      className="absolute top-2 right-2 p-2 rounded-full bg-slate-900/70 hover:bg-red-500 text-white transition-colors"
-                    >
-                      <Trash2Icon className="size-4"/>
-                    </button>
                   </div>
                 ) : (
                   <button
